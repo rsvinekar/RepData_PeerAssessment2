@@ -1,11 +1,13 @@
 ---
-title: "NOAA data analysis"
+title: "NOAA data analysis : Impact of storms on Health and Economy"
 author: "Rithvik Shamrao Vinekar"
 date: "2023-02-28"
 output: 
   html_document:
     toc: true
+    toc_float: true
     toc_depth: 3
+    theme: lumen
 ---
 
 ```{=html}
@@ -62,6 +64,8 @@ Ideally, a thorough analysis of such a dataset would involve a thorough reading 
 
 In this document, the provided Event data will be used. The early datasets did not have a fixed format of entry or did not enforce it. Thus the people who reported events have made entries which are inconsistent and have many human errors. The major part of the analysis involves cleaning and categorising the data into the events expected in the documentation, and a few more which may help.
 
+Subsequently the data can be easily grouped by event and values summed, in this case Fatalities and Injuries for Health, and Property Damage and Crop Damage for Economy. For the latter, the values are in multiples of 1, K (1000), M(million) or B(billion), so some processing needs to be done to get them in a single unit - USD $. We will attempt to categorise the whole data, from 1950 to 2011, as requested.
+
 # Data Processing
 
 This is the session info for the R session used currently:
@@ -97,7 +101,7 @@ rm( url_source, file_dest)
 Read the compressed csv file directly into a dataframe : `stormdata`
 
 ```{r message=FALSE, warning=FALSE, include=TRUE}
-stormdata <- read.csv("repdata%2Fdata%2FStormData.csv.bz2", encoding = "UTF-8")
+stormdata <- read.csv("StormData.csv.bz2", encoding = "UTF-8")
 ```
 
 ## Check the data
@@ -145,7 +149,7 @@ These types were put in a text file from this documentation by copy and paste. T
 
 This was read into a variable dataframe stormevents from the csv file
 
-```{r}
+```{r cache = TRUE}
 stormevents <- read.csv("Stormdata_EvType.csv", header = FALSE)
 str(stormevents)
 ```
@@ -169,10 +173,9 @@ There are 985 unique entries instead of 48.
 
 ```{r}
 uniqueEvTypes <- data.frame(EVTYPE=unique(stormdata$EVTYPE))
-uniqueEvTypes
+head(uniqueEvTypes)
 ```
-
-Looking at these entries, there are many spelling errors, Summary entries which do not match events, and entries with different cases.
+One can also use `View(uniqueEvTypes)` to look at all entries interactively in RStudio. Looking at these entries, there are many spelling errors, Summary entries which do not match events, and entries with different cases.
 
 There are many EVTYPEs which are synonymous, but will differ due to spelling mistakes, variations in writing or spelling, use of synonymous words, and the understanding of the reporting person. Due to this, aggregating totals and sums from such data is not possible unless all related EVTYPES are binned together.
 
@@ -209,7 +212,7 @@ We can replace some common word occurrances with substitutions. These substituti
 
 Note that there will be an automatic process of word matching used later, so these replacements aid the automatic process later to categorise events.
 
-```{r Replacements}
+```{r Replacements,cache = TRUE}
 stormdata$EVTYPE<-gsub("PRECIPITATION","RAIN" , stormdata$EVTYPE) 
 stormdata$EVTYPE<-gsub("PRECIP","RAIN" , stormdata$EVTYPE)
 # Precipitation can mean rain, snow, hail, any and all of these mixed up, but rain is most common.
@@ -350,7 +353,7 @@ uniqueEvTypes <- data.frame(EVTYPE_M=unique(stormdata$EVTYPE))
 dim(uniqueEvTypes)
 ```
 
-Already there is a reduction in number of unique entries, from 985 to 546, but this is not enough. We will need to match the entries using text matching. One way of doing so is string distance, but it is not very accurate on its own.
+Already there is a reduction in number of unique entries, from 985 to `r dim(uniqueEvTypes)[1]`, but this is not enough. We will need to match the entries using text matching. One way of doing so is string distance, but it is not very accurate on its own.
 
 Another would be to have separate columns for each of the 48 variables as mentioned before, and check if the unique values have anything to do with them. The evtypes can sometimes map to multiple events, such as "RIP CURRENTS HIGH SURF" which maps to both RIP CURRENTS and HIGH SURF. This would lead to a lengthy detailed analysis, however for this short analysis we will assume each evtype maps to one of the 48 variables.
 
@@ -433,7 +436,7 @@ With this merger, work has to be done to stormdata, not uniqueEvTypes. We will n
 
 Below are catch-alls with small words and wildcards like .*. They can mess with other, more specific entries. For example the first one will ensure even DUST DEVIL are DUST STORM so we need phase 2 replacement, after specific entries have been already detected They have therefore been moved after one run of the replace for loop. The loop will be run again for entries which are not filled in.
 
-```{r}
+```{r cache = TRUE}
 stormdata$EVTYPE<-gsub(".*DUST.*","DUST STORM",stormdata$EVTYPE)
 stormdata$EVTYPE<-gsub(".*SURF","HIGH SURF",stormdata$EVTYPE)
 stormdata$EVTYPE<-gsub(".*SWELL.*","STORM SURGE/TIDE",stormdata$EVTYPE)
@@ -625,7 +628,7 @@ health_grp <- gather(health,Incident, Totals, Fatalities:Injuries, factor_key=TR
 
 The plot of the fatalities and injuries for each event are seen below
 
-```{r fig.width = 8,fig.cap="Plot for Fatalities and Injuries caused by Events. The plot gives us an idea of the effect of the events on the health of the community. The y-axis is a pseudo-log scale, which increases in magnitude"}
+```{r fig.cap="Plot for Fatalities and Injuries caused by Events. The plot gives us an idea of the effect of the events on the health of the community. The y-axis is a pseudo-log scale", fig.height=10, fig.width=10, warning=FALSE}
 gg <- ggplot(data = health_grp, aes(x = EVTYPE_M, y = log10(Totals), fill=Incident))+
         geom_col()+
         ggtitle("Affect on Health")+
@@ -633,18 +636,20 @@ gg <- ggplot(data = health_grp, aes(x = EVTYPE_M, y = log10(Totals), fill=Incide
         facet_grid(Incident~.)+
         theme(plot.title = element_text(hjust = 0.5),
               axis.text.x = element_text(angle = 90, vjust = 0,
-              hjust=0),axis.text=element_text(size=3)) +
+              hjust=0),axis.text=element_text(size=8)) +
         scale_y_continuous(breaks=c(0,1,2,3,4,5), 
                         labels=c("0","10","100","1K","10K","100K"))
       gg
 ```
 
 
-
+### Cause of Maximum fatalities
 The following events are most harmful - with fatalities ranked above injuries : These have caused greater than 1K fatalities:
 ```{r}
 health %>% arrange( desc(Fatalities)) %>% filter(Fatalities > 1000)
 ```
+
+### Cause of Maximum injuries
 
 These events have left a large number of injured:
 ```{r}
@@ -669,7 +674,7 @@ damage_grp <- gather(damages,PropCrop, Totals, Property:Crops, factor_key=TRUE, 
 
 Plotting the damage values to events on a log scale below
 
-```{r fig.width = 5, fig.cap="Plot for Property and Crop damages caused by Events. The plot gives us an idea of the damage caused by the events on the community.The y-axis is a pseudo-log scale, which increases in magnitude"}
+```{r fig.cap="Plot for Property and Crop damages caused by Events. The plot gives us an idea of the damage caused by the events on the community.The y-axis is a pseudo-log scale", fig.height=10, fig.width=10, warning=FALSE}
 gg <- ggplot(data = damage_grp, aes(x = EVTYPE_M, y = log10(Totals), fill=PropCrop))+
         geom_col()+
         ggtitle("Damages")+
@@ -677,7 +682,7 @@ gg <- ggplot(data = damage_grp, aes(x = EVTYPE_M, y = log10(Totals), fill=PropCr
         facet_grid(PropCrop~.)+
         theme(plot.title = element_text(hjust = 0.5),
               axis.text.x = element_text(angle = 90, vjust = 0,
-              hjust=0),axis.text=element_text(size=3)) +
+              hjust=0),axis.text=element_text(size=8)) +
         scale_y_continuous(breaks=c(0,3,6,9), 
                        labels=c("$0","$1K","$1M","$1B"))
       
@@ -685,11 +690,13 @@ gg
 ```
 
 
-Maximum property damage is caused by:
+### Cause of Maximum property damage
 ```{r}
 damages %>% arrange( desc(Property)) %>% filter(Property > 1000000000)
 ```
 All damages above \$1B, upto 14 events.
+
+### Cause for Maximum Crop Damage
 
 Maximum crop damage is caused by:
 ```{r}
