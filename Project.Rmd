@@ -75,6 +75,7 @@ This is the session info for the R session used currently:
 ```{r}
 sessionInfo()
 ```
+Files are available on [Github](https://github.com/rsvinekar/RepData_PeerAssessment2)
 
 ## Obtaining the data
 
