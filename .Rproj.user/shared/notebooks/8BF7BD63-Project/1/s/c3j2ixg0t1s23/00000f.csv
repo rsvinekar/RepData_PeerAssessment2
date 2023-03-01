@@ -1,0 +1,6 @@
+"0","Expense_units <- data.frame(PROPDMGEXP = c( """",""K"", ""M"", ""B""),"
+"0","                  PROPDMGUNIT = c(1,1000, 1000000, 1000000000))"
+"0","stormdata <- merge(stormdata,Expense_units)"
+"0","Expense_units <- data.frame(CROPDMGEXP = c( """",""K"", ""M"", ""B""),"
+"0","                  CROPDMGUNIT = c(1,1000, 1000000, 1000000000))"
+"0","stormdata <- merge(stormdata,Expense_units)"

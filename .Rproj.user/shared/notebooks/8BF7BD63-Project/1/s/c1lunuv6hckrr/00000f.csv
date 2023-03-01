@@ -1,0 +1,2 @@
+"0","names(stormevents)<-c(""Event_name"",""Designator"")"
+"0","stormevents$Event_name<-toupper(stormevents$Event_name)"

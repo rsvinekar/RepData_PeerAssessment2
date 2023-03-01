@@ -1,0 +1,701 @@
+---
+title: "NOAA data analysis"
+author: "Rithvik Shamrao Vinekar"
+date: "2023-02-28"
+output: 
+  github_document:
+    toc: true
+    toc_depth: 3
+  html_document:
+    toc: true
+    toc_depth: 3
+---
+
+```{=html}
+<!-- 
+Has either a (1) valid RPubs URL pointing to a data analysis document for this assignment been submitted; or (2) a complete PDF file presenting the data analysis been uploaded?
+
+Is the document written in English?
+
+Does the analysis include description and justification for any data transformations?
+
+Does the document have a title that briefly summarizes the data analysis?
+
+Does the document have a synopsis that describes and summarizes the data analysis in less than 10 sentences?
+
+Is there a section titled "Data Processing" that describes how the data were loaded into R and processed for analysis?
+
+Is there a section titled "Results" where the main results are presented?
+
+Is there at least one figure in the document that contains a plot?
+
+Are there at most 3 figures in this document?
+
+Does the analysis start from the raw data file (i.e. the original .csv.bz2 file)?
+
+Does the analysis address the question of which types of events are most harmful to population health?
+
+Does the analysis address the question of which types of events have the greatest economic consequences?
+
+Do all the results of the analysis (i.e. figures, tables, numerical summaries) appear to be reproducible?
+
+Do the figure(s) have descriptive captions (i.e. there is a description near the figure of what is happening in the figure)?
+
+As far as you can determine, does it appear that the work submitted for this project is the work of the student who submitted it?
+
+-->
+```
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Synopsis
+
+The National Oceanic and Atmospheric Administration department of the US government collects data about storms and atmospheric events from across the country. Specific people submit reports of the events which are then collated into reports. These reports are made available as datasets for researchers. One such dataset is provided at <https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2>.There is [linked documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf) which tells us the format expected as well as the well-defined categories of events, and much more information.
+
+The databases provide information about property damages, crop damages, fatalities and injuries reported, among other things. It also includes a Remark, which has a verbal description of the event, as well as the location of the event reported. This includes state and county information, time of event and the latitude and longitude of the event. The categories of events involve zones, such as County level or Marine events.
+
+The questions we need to answer are:
+
+1.  Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
+
+2.  Across the United States, which types of events have the greatest economic consequences?
+
+Ideally, a thorough analysis of such a dataset would involve a thorough reading of the Remarks in order to categorise the events. It is often difficult to give a single category to an event as many phenomena can occur simultaneously, but the number of fatalities, injuries or damages refers to a single event. The location data can also tell if an event is marine, coastal or a land event. Such a thorough study is beyond scope of this document.
+
+In this document, the provided Event data will be used. The early datasets did not have a fixed format of entry or did not enforce it. Thus the people who reported events have made entries which are inconsistent and have many human errors. The major part of the analysis involves cleaning and categorising the data into the events expected in the documentation, and a few more which may help.
+
+# Data Processing
+
+This is the session info for the R session used currently:
+
+## Session info
+
+```{r}
+sessionInfo()
+```
+
+## Obtaining the data
+
+Loading required libraries
+
+```{r echo=TRUE}
+library(tidyverse)
+library(sjmisc)
+```
+
+Download the data.
+
+```{r eval=FALSE, message=FALSE, warning=FALSE, include=TRUE}
+url_source<-"https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+file_dest <- "StormData.csv.bz2"
+download.file(url_source,file_dest, method="libcurl")
+rm( url_source, file_dest)
+```
+
+<!-- Method libcurl to ensure this works in Rmarkdown. Without this, -->
+
+<!-- method=auto is default It works standalone, but fails on knit -->
+
+Read the compressed csv file directly into a dataframe : `stormdata`
+
+```{r message=FALSE, warning=FALSE, include=TRUE}
+stormdata <- read.csv("repdata%2Fdata%2FStormData.csv.bz2", encoding = "UTF-8")
+```
+
+## Check the data
+
+The data read into `stormdata` needs to be checked, starting with str()
+
+```{r}
+str(stormdata)
+```
+
+There are 902297 entries
+
+The questions needed to answer are again:
+
+1.  Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
+
+2.  Across the United States, which types of events have the greatest economic consequences?
+
+The two questions involve comparing EVTYPE with
+
+1.  FATALITIES and INJURIES
+
+2.  PROPDMG and CROPDMG
+
+In the latter case, there is a need to get damage expenses in a numerical format in the same unit. This is currently not so, as PROPDMGEXP and CROPDMGEXP hold unit multipliers like "","K", "M","B" which stand basically for 1, 1,000, 1,000,000, 1,000,000,000 units or none, Kilo, Million and Billion. This info is available in [linked documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf)
+
+Before any of this is done, check EVTYPE if it is correct. According to [linked documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf) (Table 1, Page 6), there are finite number of types. This data is available on the pdf file, under the heading
+
+> **2.1.1 Storm Data Event Table**
+
+These types were put in a text file from this documentation by copy and paste. To make it a csv file, a grep search&replace using `/\s([ZCM])$/,\1/` to replace the space separating Z or C or M at the end of the line with a comma was done. This file has been saved as `"Stormdata_EvType.csv"` with contents that look like below:-
+
+    Astronomical Low Tide,Z
+    Avalanche,Z
+    Blizzard,Z
+    Coastal Flood,Z
+    Cold/Wind Chill,Z
+    Debris Flow,C
+    Dense Fog,Z
+    Dense Smoke,Z
+    Drought,Z
+    Dust Devil,C
+    Dust Storm,Z
+    ...
+
+This was read into a variable dataframe stormevents from the csv file
+
+```{r}
+stormevents <- read.csv("Stormdata_EvType.csv", header = FALSE)
+str(stormevents)
+```
+
+Give the stormevents dataframe proper header names
+
+```{r}
+names(stormevents)<-c("Event_name","Designator")
+stormevents$Event_name<-toupper(stormevents$Event_name)
+stormevents =  stormevents %>%
+    arrange(desc(str_length(Event_name)), Event_name)
+```
+
+Now we need to check if the events in the EVTYPE entry match these
+
+```{r}
+length(unique(stormdata$EVTYPE))
+```
+
+There are 985 unique entries instead of 48.
+
+```{r}
+uniqueEvTypes <- data.frame(EVTYPE=unique(stormdata$EVTYPE))
+uniqueEvTypes
+```
+
+Looking at these entries, there are many spelling errors, Summary entries which do not match events, and entries with different cases.
+
+There are many EVTYPEs which are synonymous, but will differ due to spelling mistakes, variations in writing or spelling, use of synonymous words, and the understanding of the reporting person. Due to this, aggregating totals and sums from such data is not possible unless all related EVTYPES are binned together.
+
+Since there are so many spurious summary "events", we can add one more category or bin
+
+```{r}
+stormevents[nrow(stormevents) + 1,] <- c("SUMMARY","S")
+```
+
+It may not be possible to automate every instance and change them to match the categories we need. Some may be irrelevant, such as the summary entries. However, we can go a long way to do so.
+
+The ideal way to do this is to have boolean columns for each category and map each event to category based on whether the event fits the category or not. This is because each event can, and most probably do belong to multiple categories. Tornadoes, Hurricanes etc. can also secondarily fall into Strong Wind, Storm Surge, Heavy Rain, Lightening etc. and many other such categories. Events do not occur in isolation, but data for crop and property damage do not get separated into these categories easily.
+However, such an approach is beyond the scope of this work.
+
+### Preparation
+
+Save EVTYPE into a column ORIG_EVTYPE. This way EVTYPE can be used as a working copy, while ORIG_EVTYPE preserves original values, if needed.
+
+```{r}
+stormdata$ORIG_EVTYPE <- stormdata$EVTYPE 
+```
+
+### UPPERCASE Events
+
+Now all the EVTYPE are made Uppercase. This eliminates many entries with inconsistent cases.
+
+```{r}
+stormdata$EVTYPE <- toupper(stormdata$EVTYPE)
+```
+
+### Common replacements
+
+We can replace some common word occurrances with substitutions. These substitutions are from observations that some words are synonyms or other ways to express the same thing, like High temperature to mean high heat,etc. The list below is not exhaustive, but is continually updated. It could be put into a file or variable, but separate commands are currently used.
+
+Note that there will be an automatic process of word matching used later, so these replacements aid the automatic process later to categorise events.
+
+```{r Replacements}
+stormdata$EVTYPE<-gsub("PRECIPITATION","RAIN" , stormdata$EVTYPE) 
+stormdata$EVTYPE<-gsub("PRECIP","RAIN" , stormdata$EVTYPE)
+# Precipitation can mean rain, snow, hail, any and all of these mixed up, but rain is most common.
+stormdata$EVTYPE<-gsub("TSTM.*$","THUNDERSTORM WIND",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("TSTM WIND","THUNDERSTORM WIND",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("THUNDERSTORM WIN.*$","THUNDERSTORM WIND",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("HURRICANE.*$","HURRICANE (TYPHOON)",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("FREEZING RAIN","SLEET",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("GLAZE","FROST/FREEZE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("SNOW/ICE","FROST/FREEZE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("SNOW","SLEET",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("FREEZING DRIZZLE","SLEET",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("HEAVY MIX","SLEET",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("COOL","COLD", stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("COLD WAVE","EXTREME COLD/WIND CHILL",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("(HEAT WAVE|HOT SPELL)","EXCESSIVE HEAT",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("UNSEASONABLY HEAT AND DRY","EXCESSIVE HEAT",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("UNSEASONABLY DRY","DROUGHT",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("UNSEASONABLY WET","HEAVY RAIN",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("SMOKE","DENSE SMOKE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("RAIN","HEAVY RAIN",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("WARM","HEAT", stormdata$EVTYPE) 
+stormdata$EVTYPE<-gsub("HIGH TEMPERATURE","EXCESSIVE HEAT" , stormdata$EVTYPE) 
+stormdata$EVTYPE<-gsub("UNSEASONABLY HOT","EXCESSIVE HEAT" , stormdata$EVTYPE) 
+stormdata$EVTYPE<-gsub("LOW TEMPERATURE","COLD/WIND CHILL" , stormdata$EVTYPE) 
+stormdata$EVTYPE<-gsub("EXTREME HEAT","EXCESSIVE HEAT" , stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("RECORD COLD AND HIGH WIND","EXTREME COLD/WIND CHILL",stormdata$EVTYPE)
+## Spelling mistake Torndao instead of Tornado :-)
+stormdata$EVTYPE<-gsub("TORNDAO","TORNADO",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("DUST DEVEL","DUST DEVIL",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("WIND CHILL","COLD/WIND CHILL",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("EXTREME/RECORD COLD","COLD/WIND CHILL",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("RECORD COLD EXTREME","COLD/WIND CHILL",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("EXCESSIVE COLD","EXTREME COLD/WIND CHILL",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("EXTREME COLD","EXTREME COLD/WIND CHILL",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("COLD$","COLD/WIND CHILL",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("RECORD RAINFALL","HEAVY RAIN",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("EXCESSIVE/EXCESSIVE RAINFALL","HEAVY RAIN",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("(MIXED|EXCESSIVE|MONTHLY) RAIN","HEAVY RAIN",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("EXTREME/RECORD COLD","EXTREME COLD/WIND CHILL",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("UNSEASONAL LOW TEMP","EXTREME COLD/WIND CHILL",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("RECORD","EXCESSIVE" , stormdata$EVTYPE) 
+stormdata$EVTYPE<-gsub("EXCESSIVE TEMPERATURE","EXCESSIVE HEAT" , stormdata$EVTYPE) 
+stormdata$EVTYPE<-gsub("TEMPERATURE EXCESSIVE","EXCESSIVE HEAT" , stormdata$EVTYPE) 
+stormdata$EVTYPE<-gsub("SEVERE","EXCESSIVE" , stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("COLD$","COLD/WIND CHILL",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("THUNDERSTORM","THUNDERSTORM WIND",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("LIGHTING","LIGHTNING",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("LIGHTENING","LIGHTNING",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("LIGNTNING","LIGHTNING",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub(".*HIGH TIDE.*","STORM SURGE/TIDE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("HIGH WAVES","STORM SURGE/TIDE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("WIND DAMAGE","STRONG WIND",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("HIGH WIND/SEAS","MARINE HIGH WIND",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub(".*WALL CLOUD","TROPICAL STORM",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("EXCESSIVE HIGH","EXCESSIVE HEAT",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("EXCESSIVE LOW","EXTREME COLD/WIND CHILL",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("WIND","HIGH WIND",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("STORM SURGE","STORM SURGE/TIDE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("FOG","DENSE FOG",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("FUNNEL","FUNNEL CLOUD",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("AVALANCE","AVALANCHE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("^ICE$","SLEET",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("^FREEZE$","FROST/FREEZE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("FROST.*FREEZE","FROST/FREEZE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("VOLCANIC.*","VOLCANIC ASH",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub(".*FROST$","FROST/FREEZE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("HIGH SURF","HEAVY SURF",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("WILD FIRES","WILDFIRE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("WILD FIRE","WILDFIRE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("WILD/FOREST FIRE","WILDFIRE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("WATER SPOUT","WATERSPOUT",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("WAYTERSPOUT","WATERSPOUT",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("BLOWING DUST","DUST STORM",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("RAINSTORM","TROPICAL STORM",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("RAIN STORM","TROPICAL STORM",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("DAMAGING FREEZE","FROST/FREEZE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("RAINFALL","HEAVY RAIN",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("SHOWER","RAIN",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("(MUDSLIDES|MUDSLIDE|MUD/ROCK SLIDE)","DEBRIS FLOW",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("LANDSLIDE","DEBRIS FLOW",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("HIGH SEAS","MARINE THUNDERSTORM WIND",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("TYPHOON","HURRICANE (TYPHOON)",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("MICROBURST","TORNADO",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("GUSTNADO","TORNADO",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("DOWNBURST","TORNADO",stormdata$EVTYPE)
+# downbursts and microbursts are different from tornadoes, but similar enough
+stormdata$EVTYPE<-gsub("HEAVY SURF","HIGH SURF",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("ROUGH SEAS","MARINE THUNDERSTORM WIND",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("HEAVY SEAS","MARINE THUNDERSTORM WIND",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("HIGH SEAS","MARINE THUNDERSTORM WIND",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("COASTALFLOOD","COASTAL FLOOD",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("CSTL FLOOD","COASTAL FLOOD",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("EROSION","COASTAL FLOOD",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("HYPOTHERMIA/EXPOSURE","EXTREME COLD/WIND CHILL",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("COLD WEATHER","COLD/WIND CHILL",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("HIGH WATER","STORM SURGE/TIDE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("(HIGH|HEAVY) SWELLS","STORM SURGE/TIDE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("MARINE (MISHAP|ACCIDENT)","MARINE THUNDERSTORM WIND",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("URBAN/SML STREAM FLD","FLASH FLOOD",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub(".*STREAM.*FL.*D","FLASH FLOOD",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("FLASH FLOO*D","FLASH FLOOD",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("WINT.?R.? MIX","WINTER WEATHER",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("ICY ROAD.*","FROST/FREEZE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("BLACK ICE","FROST/FREEZE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("AGRICULTURAL FREEZE","FROST/FREEZE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("HARD FREEZE","FROST/FREEZE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("ROUGH SURF","HIGH SURF",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("ROGUE WAVE","HIGH SURF",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("BRUSH FIRE","WILDFIRE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("FOREST FIRE","WILDFIRE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("EXCESSIVE COLD/FROST","FROST/FREEZE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("COASTAL.?STORM","STORM SURGE/TIDE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("COASTAL.?SURGE","STORM SURGE/TIDE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("APACHE COUNTY","STRONG WIND",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("METRO STORM.*","THUNDERSTORM WIND",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("^EXCESSIVE$","EXCESSIVE HEAT",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("^RED FLAG CRITERIA$","LIGHTNING",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("^HIGH$","HIGH WIND",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("^MONTHLY TEMPERATURE$","COLD/WIND CHILL",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("REMNANTS OF FLOYD","HURRICANE (TYPHOON)",stormdata$EVTYPE)
+## Hurricane Floyd - in case you are wondering :-)
+stormdata$EVTYPE<-gsub("VOG","VOLCANIC ASH",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("^ICE$","SLEET",stormdata$EVTYPE)
+
+## Mainly in Hawaii, volcanic ash mixed into fog
+stormdata$EVTYPE<-gsub("RAPIDLY RISING WATER","HEAVY RAIN",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub(".*WET","HEAVY RAIN",stormdata$EVTYPE)
+## Remarks say this entry is not a flash flood, just heavy rain which caught a man cleaning a manhole off guard and resulted in fatality
+```
+
+For EVTYPE given as OTHER, we can try something different
+
+Now, we can check the uniqueEvTypes again
+
+```{r}
+uniqueEvTypes <- data.frame(EVTYPE_M=unique(stormdata$EVTYPE))
+#table(uniqueEvTypes)
+dim(stormdata)
+```
+
+Already there is a reduction in number of unique entries, from 985, but this is not enough. We will need to match the entries using text matching. One way of doing so is string distance, but it is not very accurate on its own.
+
+Another would be to have separate columns for each of the 48 variables as mentioned before, and check if the unique values have anything to do with them. The evtypes can sometimes map to multiple events, such as "RIP CURRENTS HIGH SURF" which maps to both RIP CURRENTS and HIGH SURF. This would lead to a lengthy detailed analysis, however for this short analysis we will assume each evtype maps to one of the 48 variables.
+
+Note that all changes must be done on the main stormdata, not on uniqueEvTypes, because otherwise the mappings will be lost. We will have to finally regenerate and merge `uniqueEvTypes` with `stormdata`, after it has matching columns from `stormevents`
+
+First we will have a function which can find how many matching words are present. This checks if the evtype we are looking for is a substring in the entry.
+
+```{r}
+getstr_contain<-function(i, data = stormdata){
+  x=""
+  numstormevents <- dim(stormevents)[1]
+  check = 0
+  for(j in 1:numstormevents) {
+      if (str_contains(data$EVTYPE[i],stormevents$Event_name[j]) > 0) { 
+        x <- stormevents$Event_name[j]
+        return(x)
+      }
+    
+  }
+  
+ return(x)
+}
+```
+
+Now, we compare word to word
+
+```{r}
+words_common <- function(str1, str2) {
+  str1 <- toupper(str1)
+  str2 <- toupper(str2)
+  mapply(function(x, y) sum(str_contains(x, y)), 
+         strsplit(str1, ' '), strsplit(str2, ' '))
+}
+
+get_commonwords <- function(i, data = stormdata){
+    x=""
+    for(j in 1:dim(stormevents)[1]) {
+      if (words_common(data$EVTYPE[i],stormevents$Event_name[j]) == TRUE) { 
+      x <- stormevents$Event_name[j]
+      return(x)
+      }
+    }
+    x
+}
+```
+
+Finally, we use a fuzzy matching algorthm routinely used for our purpose, agrep. It was found that agrep is not really as accurate in matching as required, so it has lowest priority. These three filters are applied in order, thus filling as many gaps as possible.
+
+```{r}
+compare_agrep<-function(i,data = stormdata){
+  x<-agrep(data$EVTYPE[i], stormevents$Event_name,
+  ignore.case=TRUE, value=TRUE,
+  max.distance = 0.01, useBytes = TRUE)
+ x <- paste0(x,"")
+ x
+}
+```
+
+Now we apply the filters defined in the above functions. uniqueEvTypes is regenerated, just in case to avoid any mismapping later. uniqueEvTypes\$EVTYPE must not change in the analysis below. A new column EVTYPE_M is generated.
+
+```{r replace}
+uniqueEvTypes <- data.frame(EVTYPE=unique(stormdata$EVTYPE))
+for(i in 1:dim(uniqueEvTypes)[1]) {
+ 
+ x <- getstr_contain(i,data=uniqueEvTypes)
+ y <- get_commonwords(i,data=uniqueEvTypes)
+ #z <- compare_agrep(i)
+ 
+ if(length(x)>0) { uniqueEvTypes$EVTYPE_M[i] <- x }
+ else if(length(y)>0) { uniqueEvTypes$EVTYPE_M[i] <- y }
+# else if(length(z)>0) { uniqueEvTypes$EVTYPE_M[i] <- z }
+ else { uniqueEvTypes$EVTYPE_M[i]<-NA }
+} 
+```
+
+```{r}
+stormdata <- merge(stormdata,uniqueEvTypes, by.x = "EVTYPE", by.y = "EVTYPE")
+```
+With this merger
+
+```{r}
+## These are catch-alls with small words and wildcards like .*. They can mess with other, more specific entries. For example the first one will ensure even DUST DEVIL are DUST STORM so we need phase 2 replacement. They have therefore been moved after one run of the replace for loop. The loop will be run again for entries which are not filled in. 
+stormdata$EVTYPE<-gsub(".*DUST.*","DUST STORM",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub(".*SURF","HIGH SURF",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub(".*SWELL.*","STORM SURGE/TIDE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub(".*SLIDE","DEBRIS FLOW",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub(".*EROSI.?N","DEBRIS FLOW",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub(".*DRY.*","DROUGHT",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub(".*TIDE.*","STORM SURGE/TIDE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub(".*DAM.*","FLASH FLOOD",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("ICE JAM","FLASH FLOOD",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("LANDSPOUT","TORNADO",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("LANDSLUMP","DEBRIS FLOW",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub(".*WET.*","HEAVY RAIN",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("DROWNING","FLOOD",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub(".*DRIE.*","DROUGHT",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("FREEZING SPRAY","FREEZING FOG",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub(".*FREEZ.*","FROST/FREEZE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub(".*HOT.*","HEAT",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub(".*FIRE.*","WILDFIRE",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub(".*TURBULENCE.*","	
+STRONG WIND",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub(".*ICE.*","ICE STORM",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("HYPERTHERMIA/EXPOSURE","HEAT",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("HYPOTHERMIA.*","COLD/WIND CHILL",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub(".*SMALL STREAM.*","FLOOD",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub(".*WND.*","STRONG WIND",stormdata$EVTYPE)       
+stormdata$EVTYPE<-gsub("REMNANTS OF FLOYD","HURRICANE (TYPHOON)",stormdata$EVTYPE)
+## Hurricane Floyd - in case you are wondering :-)
+stormdata$EVTYPE<-gsub("VOG","VOLCANIC ASH",stormdata$EVTYPE)
+## Mainly in Hawaii, volcanic ash mixed into fog
+stormdata$EVTYPE<-gsub("RAPIDLY RISING WATER","HEAVY RAIN",stormdata$EVTYPE)
+## Remarks say this entry is not a flash flood, just heavy rain which caught a man cleaning a manhole off guard and resulted in fatality
+stormdata$EVTYPE<-gsub("APACHE COUNTY","STRONG WIND",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("METRO STORM.*","THUNDERSTORM WIND",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("^EXCESSIVE$","EXCESSIVE HEAT",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("^RED FLAG CRITERIA$","LIGHTNING",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("^HIGH$","HIGH WIND",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("^MONTHLY TEMPERATURE$","COLD/WIND CHILL",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("^COLD TEMPERATURE$","COLD/WIND CHILL",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("^COLD TEMPERATURES$","COLD/WIND CHILL",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("^COLD SPELL$","COLD/WIND CHILL",stormdata$EVTYPE)
+stormdata$EVTYPE<-gsub("^URBAN.*","FLASH FLOOD",stormdata$EVTYPE)
+```
+
+```{r replaceagain}
+#uniqueEvTypes <- data.frame(EVTYPE=unique(stormdata$EVTYPE))
+getstr_contain_remarks<-function(i, data = stormdata){
+  x=""
+  numstormevents <- dim(stormevents)[1]
+  check = 0
+  for(j in 1:numstormevents) {
+      if (str_contains(data$REMARKS[i],stormevents$Event_name[j],ignore.case = TRUE) > 0) { 
+        x <- stormevents$Event_name[j]
+        return(x)
+      }
+  }
+ return(x)
+}
+get_commonwords_frm_remarks <- function(i, data = stormdata){
+    x=""
+    for(j in 1:dim(stormevents)[1]) {
+      if (words_common(data$REMARKS[i],stormevents$Event_name[j]) == TRUE) { 
+      x <- stormevents$Event_name[j]
+      return(x)
+      }
+    }
+    x
+}
+
+for(i in 1:dim(stormdata)[1]) {
+ if (  stormdata$EVTYPE_M[i]=="" | is.na(stormdata$EVTYPE_M[i])){
+ ## This is the second run, so we skip entries made before and ensure
+ ## they don't get overwritten. This is the difference with first run
+ if(stormdata$EVTYPE[i]=="OTHER"){
+   x <- getstr_contain_remarks(i)
+   y <- get_commonwords_frm_remarks(i)
+   z <- ""
+ }
+ else {
+   x <- getstr_contain(i)
+   y <- get_commonwords(i)
+   z <- compare_agrep(i)
+   z <- z[length(z)]
+ }
+ if(length(x)>0 & x != "") { stormdata$EVTYPE_M[i] <- x }
+ else if(length(y)>0 & y != "") { stormdata$EVTYPE_M[i] <- y }
+ else if(length(z)>0 & z != "") { stormdata$EVTYPE_M[i] <- z }
+ }
+}
+```
+
+Now, we merge uniqueEvTypes with stormdata
+
+```{r}
+unassigned <- stormdata[stormdata$EVTYPE_M=="",]
+```
+
+**Use the above variable** unassigned, check for remnant unclassified and read the remarks. This gives a clue to what the remaining ones are. Examples are "REMNANTS OF FLOYD" which would leave us guessing what the remnant of Sgt Floyd at the Sioux City Museum has to do with the weather. The remarks say hurricane Floyd. The replacements code above is updated until the unassigned number is low and there are no more assignments. This is an iterative process, but once done, all replacements have been mentioned. Now, let the unassigned ones get a category of their own "OTHER".
+
+```{r}
+stormdata[stormdata$EVTYPE_M=="",]$EVTYPE_M="OTHER"
+```
+
+The EVTYPE_M column now should be made factors
+
+```{r}
+stormdata$EVTYPE_M <- as.factor(stormdata$EVTYPE_M)
+```
+
+Finally, we have our EVTYPE variables in the proper format as EVTYPE_M
+
+## Damage Values
+
+There are two types of damage values : Property and Crop damage. Both should be expressed in USD or \$, but they have been expressed in multiples. There is a PROPDMG column with a value, and a PROPDMGEXP column which specifies a code for a multiplier. These are supposed to be letters like K, M, B which are Kilo, Million, Billion - this much is mentioned in documentation. However
+
+```{r}
+table(stormdata$PROPDMGEXP)
+```
+
+This shows that there are more entries than K,M,B.
+
+What are H, 1..8 and -,+,? Instead of hazarding a guess, one way is to look for documentation from NOAA website. This does not help, as the format seems to have changed to a more logical simpler format. However, the [discussion forum pointed the way](https://www.coursera.org/learn/reproducible-research/discussions/forums/FaD1OCj0Eea8jw6UvTi2Tw/threads/mnbBptb7EempfhLION99EA). It is difficult to find the exact format as the formats from NOAA data have changed post 2012, according to the [link from the discussion forum](https://github.com/flyingdisc/RepData_PeerAssessment2/blob/master/how-to-handle-PROPDMGEXP.md). Without this, the merge step below was removing rows.
+
+First, we need to get all unique entries, which were mentioned in the table() output above. This is for PROPDMGEXP, there is also the CROPDMGEXP column. We need to get unique entries from these columns, make a union of the two sets, and sort them out.
+
+```{r}
+unique_DMGEXP <- sort( union(
+                  unique(stormdata$PROPDMGEXP),
+                  unique(stormdata$CROPDMGEXP)
+                            )
+                  )
+unique_DMGEXP
+```
+
+Now we need to make a translation table which we will later merge. There is a [csv mentioned on the discussion forum](https://github.com/dsong99/Reproducible-Proj-2/blob/master/storm_exp_code.csv), but it is convenient to make the entries here itself.
+
+```{r}
+Expense_units <- data.frame(DMGEXP = unique_DMGEXP,DMGUNIT = c(0,1,0,1,10,10,10,10,10,10,10,10,10,1000000000,100,100,1000,1000,1000000,1000000))
+```
+
+Now we need to merge the expense units with the database twice, once for PROPDMG and once for CROPDMG
+
+```{r}
+stormdata <- merge(stormdata,Expense_units,by.x="PROPDMGEXP",by.y="DMGEXP")
+stormdata <- stormdata %>%
+              rename("PROPDMGUNIT" = "DMGUNIT" )
+```
+
+```{r}
+stormdata <- merge(stormdata,Expense_units,by.x="CROPDMGEXP",by.y="DMGEXP")
+stormdata <- stormdata %>%
+              rename("CROPDMGUNIT" = "DMGUNIT" ) 
+```
+
+Now we calculate two new columns, which is what we want, the actual property and crop damage numbers in a single unit - USD or \$.
+
+```{r}
+stormdata <- stormdata %>%
+              mutate( PROPDMGVAL= as.numeric(PROPDMG) * PROPDMGUNIT,                        CROPDMGVAL= as.numeric(CROPDMG) * CROPDMGUNIT 
+                    )
+```
+
+The columns we are interested in now are EVTYPE_M vs FATALITIES, INJURIES and CROPDMGVAL,PROPDMGVAL
+
+# Results
+
+## Population Health
+
+> Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
+
+The EVTYPE variable has now been changed to EVTYPE_M, which has been binned to the recommended 48 categories as well as a couple of extras (SUMMARY and OTHER). Some are missing as they were not detected:
+
+```{r}
+unique(stormdata$EVTYPE_M)
+```
+
+```{r}
+health <- stormdata %>%
+              group_by(EVTYPE_M) %>%
+              summarise(Fatalities=sum(FATALITIES, na.rm=TRUE),
+                        Injuries=sum(INJURIES,na.rm=TRUE))
+
+```
+
+```{r}
+health_grp <- gather(health,Incident, Totals, Fatalities:Injuries, factor_key=TRUE, na.rm = TRUE)
+```
+
+The plot of the fatalities and injuries for each event are seen below
+
+```{r}
+gg <- ggplot(data = health_grp, aes(x = EVTYPE_M, y = log10(Totals), fill=Incident))+
+        geom_col()+
+        ggtitle("Affect on Health")+
+        xlab("Event") + ylab("Count log10")+
+        facet_grid(Incident~.)+
+        theme(plot.title = element_text(hjust = 0.5),
+              axis.text.x = element_text(angle = 90, vjust = 0,
+              hjust=0),axis.text=element_text(size=3)) +
+        scale_y_continuous(breaks=c(0,1,2,3,4,5), 
+                        labels=c("0","10","100","1K","10K","100K"))
+      gg
+```
+
+
+
+The following events are most harmful - with fatalities ranked above injuries : These have caused greater than 1K fatalities:
+```{r}
+health %>% arrange( desc(Fatalities)) %>% filter(Fatalities > 1000)
+```
+
+These events have left a large number of injured:
+```{r}
+health %>% arrange( desc(Injuries)) %>% filter(Injuries > 1000)
+```
+
+## Damages to Crops and Property
+
+> Across the United States, which types of events have the greatest economic consequences?
+
+```{r}
+damages <- stormdata %>%
+              group_by(EVTYPE_M) %>%
+              summarise(Property=sum(PROPDMGVAL, na.rm = TRUE),
+                        Crops=sum(CROPDMGVAL,na.rm = TRUE))
+
+```
+
+```{r}
+damage_grp <- gather(damages,PropCrop, Totals, Property:Crops, factor_key=TRUE, na.rm = TRUE)
+```
+
+Plotting the damage values to events on a log scale below
+
+```{r}
+gg <- ggplot(data = damage_grp, aes(x = EVTYPE_M, y = log10(Totals), fill=PropCrop))+
+        geom_col()+
+        ggtitle("Damages")+
+        xlab("Event") + ylab("Cumulative value log10($)")+
+        facet_grid(PropCrop~.)+
+        theme(plot.title = element_text(hjust = 0.5),
+              axis.text.x = element_text(angle = 90, vjust = 0,
+              hjust=0),axis.text=element_text(size=3)) +
+        scale_y_continuous(breaks=c(0,3,6,9), 
+                       labels=c("$0","$1K","$1M","$1B"))
+      
+gg
+```
+
+
+Maximum property damage is caused by:
+```{r}
+damages %>% arrange( desc(Property)) %>% filter(Property > 1000000000)
+```
+All damages above \$1B, upto 14 events.
+
+Maximum crop damage is caused by:
+```{r}
+damages %>% arrange( desc(Crops)) %>% filter(Crops > 1000000000)
+```
+
+
+All events above caused damages exceeding \$1B.

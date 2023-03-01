@@ -1,0 +1,15 @@
+"0","```r
+trip01 <- read.csv(\"202201-divvy-tripdata.csv\")
+trip02 <- read.csv(\"202202-divvy-tripdata.csv\")
+trip03 <- read.csv(\"202203-divvy-tripdata.csv\")
+trip04 <- read.csv(\"202204-divvy-tripdata.csv\")
+trip05 <- read.csv(\"202205-divvy-tripdata.csv\")
+trip06 <- read.csv(\"202206-divvy-tripdata.csv\")
+trip07 <- read.csv(\"202207-divvy-tripdata.csv\")
+trip08 <- read.csv(\"202208-divvy-tripdata.csv\")
+trip09 <- read.csv(\"202209-divvy-tripdata.csv\")
+trip10 <- read.csv(\"202210-divvy-tripdata.csv\")
+trip11 <- read.csv(\"202211-divvy-tripdata.csv\")
+trip12 <- read.csv(\"202212-divvy-tripdata.csv\")
+
+```"
