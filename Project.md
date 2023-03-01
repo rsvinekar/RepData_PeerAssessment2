@@ -165,7 +165,7 @@ library(sjmisc)
     ## 
     ##     add_case
 
-We will write a code to download this data.
+Download the data.
 
 ``` r
 url_source<-"https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
@@ -177,8 +177,7 @@ rm( url_source, file_dest)
 <!-- Method libcurl to ensure this works in Rmarkdown. Without this, -->
 <!-- method=auto is default It works standalone, but fails on knit -->
 
-Now we can read the compressed csv file directly into a dataframe which
-we will call `stormdata`
+Read the compressed csv file directly into a dataframe : `stormdata`
 
 ``` r
 stormdata <- read.csv("repdata%2Fdata%2FStormData.csv.bz2", encoding = "UTF-8")
@@ -1324,6 +1323,16 @@ It may not be possible to automate every instance and change them to
 match the categories we need. Some may be irrelevant, such as the
 summary entries. However, we can go a long way to do so.
 
+The ideal way to do this is to have boolean columns for each category
+and map each event to category based on whether the event fits the
+category or not. This is because each event can, and most probably do
+belong to multiple categories. Tornadoes, Hurricanes etc. can also
+secondarily fall into Strong Wind, Storm Surge, Heavy Rain, Lightening
+etc. and many other such categories. Events do not occur in isolation,
+but data for crop and property damage do not get separated into these
+categories easily. However, such an approach is beyond the scope of this
+work.
+
 ### Preparation
 
 Save EVTYPE into a column ORIG_EVTYPE. This way EVTYPE can be used as a
@@ -1499,17 +1508,17 @@ dim(stormdata)
 
     ## [1] 902297     38
 
-Already there is a reduction in number of unique entries, from 985 to
-538, but this is not enough. We will need to match the entries using
-text matching. One way of doing so is string distance, but it is not
-very accurate on its own.
+Already there is a reduction in number of unique entries, from 985, but
+this is not enough. We will need to match the entries using text
+matching. One way of doing so is string distance, but it is not very
+accurate on its own.
 
-Another would be to have separate columns for each of the 48 variables,
-and check if the unique values have anything to do with them. The
-evtypes can sometimes map to multiple events, such as “RIP CURRENTS HIGH
-SURF” which maps to both RIP CURRENTS and HIGH SURF. This would lead to
-a lengthy detailed analysis, however for this short analysis we will
-assume each evtype maps to one of the 48 variables.
+Another would be to have separate columns for each of the 48 variables
+as mentioned before, and check if the unique values have anything to do
+with them. The evtypes can sometimes map to multiple events, such as
+“RIP CURRENTS HIGH SURF” which maps to both RIP CURRENTS and HIGH SURF.
+This would lead to a lengthy detailed analysis, however for this short
+analysis we will assume each evtype maps to one of the 48 variables.
 
 Note that all changes must be done on the main stormdata, not on
 uniqueEvTypes, because otherwise the mappings will be lost. We will have
@@ -1598,26 +1607,18 @@ for(i in 1:dim(uniqueEvTypes)[1]) {
 stormdata <- merge(stormdata,uniqueEvTypes, by.x = "EVTYPE", by.y = "EVTYPE")
 ```
 
-``` r
-sum(stormdata$EVTYPE_M=="NA")
-```
+With this merger, work has to be done to stormdata, not uniqueEvTypes.
+We will now filter EVTYPE more with smaller terms. If this is done
+before, it can override large term detection and introduce bias.
 
-    ## [1] 0
-
-``` r
-sum(stormdata$EVTYPE_M=="")
-```
-
-    ## [1] 177
-
-``` r
-sum(is.na(stormdata$EVTYPE_M))
-```
-
-    ## [1] 0
+Below are catch-alls with small words and wildcards like .\*. They can
+mess with other, more specific entries. For example the first one will
+ensure even DUST DEVIL are DUST STORM so we need phase 2 replacement,
+after specific entries have been already detected They have therefore
+been moved after one run of the replace for loop. The loop will be run
+again for entries which are not filled in.
 
 ``` r
-## These are catch-alls with small words and wildcards like .*. They can mess with other, more specific entries. For example the first one will ensure even DUST DEVIL are DUST STORM so we need phase 2 replacement. They have therefore been moved after one run of the replace for loop. The loop will be run again for entries which are not filled in. 
 stormdata$EVTYPE<-gsub(".*DUST.*","DUST STORM",stormdata$EVTYPE)
 stormdata$EVTYPE<-gsub(".*SURF","HIGH SURF",stormdata$EVTYPE)
 stormdata$EVTYPE<-gsub(".*SWELL.*","STORM SURGE/TIDE",stormdata$EVTYPE)
@@ -1661,54 +1662,62 @@ stormdata$EVTYPE<-gsub("^COLD SPELL$","COLD/WIND CHILL",stormdata$EVTYPE)
 stormdata$EVTYPE<-gsub("^URBAN.*","FLASH FLOOD",stormdata$EVTYPE)
 ```
 
+Now the replacement loop is run again, this time using stormdata as the
+database. For the “OTHER” entries, which have registered values
+(Property and Crop damage or fatalities), we can run our detection on
+the REMARKS. This will ensure that “OTHER” entries also get a place.
+
 ``` r
 #uniqueEvTypes <- data.frame(EVTYPE=unique(stormdata$EVTYPE))
 getstr_contain_remarks<-function(i, data = stormdata){
-  x=""
-  numstormevents <- dim(stormevents)[1]
-  check = 0
-  for(j in 1:numstormevents) {
-      if (str_contains(data$REMARKS[i],stormevents$Event_name[j],ignore.case = TRUE) > 0) { 
-        x <- stormevents$Event_name[j]
-        return(x)
-      }
-  }
- return(x)
+    x=""
+    numstormevents <- dim(stormevents)[1]
+    check = 0
+    for(j in 1:numstormevents) {
+        if (str_contains(data$REMARKS[i],stormevents$Event_name[j],ignore.case = TRUE) > 0) { 
+            x <- stormevents$Event_name[j]
+            return(x)
+        }
+    }
+    return(x)
 }
 get_commonwords_frm_remarks <- function(i, data = stormdata){
     x=""
     for(j in 1:dim(stormevents)[1]) {
-      if (words_common(data$REMARKS[i],stormevents$Event_name[j]) == TRUE) { 
-      x <- stormevents$Event_name[j]
-      return(x)
-      }
+        if (words_common(data$REMARKS[i],stormevents$Event_name[j]) == TRUE) { 
+            x <- stormevents$Event_name[j]
+            return(x)
+        }
     }
     x
 }
+```
 
+The main function
+
+``` r
 for(i in 1:dim(stormdata)[1]) {
- if (  stormdata$EVTYPE_M[i]=="" | is.na(stormdata$EVTYPE_M[i])){
- ## This is the second run, so we skip entries made before and ensure
- ## they don't get overwritten. This is the difference with first run
- if(stormdata$EVTYPE[i]=="OTHER"){
-   x <- getstr_contain_remarks(i)
-   y <- get_commonwords_frm_remarks(i)
-   z <- ""
- }
- else {
-   x <- getstr_contain(i)
-   y <- get_commonwords(i)
-   z <- compare_agrep(i)
-   z <- z[length(z)]
- }
- if(length(x)>0 & x != "") { stormdata$EVTYPE_M[i] <- x }
- else if(length(y)>0 & y != "") { stormdata$EVTYPE_M[i] <- y }
- else if(length(z)>0 & z != "") { stormdata$EVTYPE_M[i] <- z }
- }
+    if (  stormdata$EVTYPE_M[i]=="" | is.na(stormdata$EVTYPE_M[i])){
+        ## This is the second run, so we skip entries made before and ensure
+        ## they don't get overwritten. This is the difference with first run
+        if(stormdata$EVTYPE[i]=="OTHER"){
+            x <- getstr_contain_remarks(i)
+            y <- get_commonwords_frm_remarks(i)
+            z <- ""
+        } else {
+            x <- getstr_contain(i)
+            y <- get_commonwords(i)
+            z <- compare_agrep(i)
+            z <- z[length(z)]
+        }
+        if(length(x)>0 & x != "") { stormdata$EVTYPE_M[i] <- x }
+        else if(length(y)>0 & y != "") { stormdata$EVTYPE_M[i] <- y }
+        else if(length(z)>0 & z != "") { stormdata$EVTYPE_M[i] <- z }
+    }
 }
 ```
 
-Now, we merge uniqueEvTypes with stormdata
+The unassigned values can be checked in a variable
 
 ``` r
 unassigned <- stormdata[stormdata$EVTYPE_M=="",]
@@ -1722,7 +1731,10 @@ weather. The remarks say hurricane Floyd. The replacements code above is
 updated until the unassigned number is low and there are no more
 assignments. This is an iterative process, but once done, all
 replacements have been mentioned. Now, let the unassigned ones get a
-category of their own “OTHER”.
+category of their own “OTHER”. This leaves a handful - around 4 entries
+which can really not be categorised, such as NORTHERN LIGHTS, NONE, MILD
+etc. which are just observations or dummy entries. We can put all these
+entries into “OTHER”
 
 ``` r
 stormdata[stormdata$EVTYPE_M=="",]$EVTYPE_M="OTHER"

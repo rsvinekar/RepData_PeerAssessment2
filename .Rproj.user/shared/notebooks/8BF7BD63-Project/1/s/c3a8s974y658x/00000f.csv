@@ -1,0 +1,1 @@
+"0","damages %>% arrange( desc(Property)) %>% filter(Property > 1000000000)"

@@ -1,0 +1,7 @@
+"0","uniqueEvTypes <- data.frame(EVTYPE_M=unique(stormdata$EVTYPE))"
+"0","dim(uniqueEvTypes)"
+"1","[1]"
+"1"," 546"
+"1","   1"
+"1","
+"
